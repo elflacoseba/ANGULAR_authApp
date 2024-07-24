@@ -1,9 +1,9 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { environments } from '../../../environments/environments';
-import { HttpClient } from '@angular/common/http';
-import { catchError, map, Observable, tap, throwError } from 'rxjs';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { catchError, map, Observable, of, tap, throwError } from 'rxjs';
 
-import { AuthStatus, LoginResponse, User } from '../interfaces';
+import { AuthStatus, CheckTokenResponse, LoginResponse, User } from '../interfaces';
 
 @Injectable({
   providedIn: 'root'
@@ -21,6 +21,12 @@ export class AuthService {
 
   constructor() { }
 
+  private setAuthentication(user: User, token: string): void {
+    this._currentUser.set(user);
+    this._authStatus.set(AuthStatus.authenticated);
+    localStorage.setItem("token", token);
+  }
+
   login( email: string, password: string ): Observable<boolean> {
 
     const url = `${ this.baseUrl }/auth/login`;
@@ -28,12 +34,8 @@ export class AuthService {
 
     return this.http.post<LoginResponse>( url, body )
       .pipe(
-        tap( ({ user, token }) => {
-          this._currentUser.set( user );
-          this._authStatus.set( AuthStatus.authenticated );
-          localStorage.setItem("token", token);
-
-         // console.log({ user, token });
+        map( ({ user, token }) => {
+          this.setAuthentication( user, token );
         }),
         map( () => true ),
 
@@ -41,4 +43,31 @@ export class AuthService {
         )
       );
   }
+
+  checkAuthStatus(): Observable<boolean> {
+    const url = `${ this.baseUrl }/auth/check-token`;
+    const token = localStorage.getItem('token');
+
+    if ( !token ) return of(false);
+
+    const headers = new HttpHeaders()
+      .set('Authorization', `Bearer ${ token }`);
+
+    return this.http.get<CheckTokenResponse>(url, { headers })
+      .pipe(
+        map( ( { token, user }) => {
+          this.setAuthentication( user, token );
+
+          return true;
+        } ),
+
+        catchError( () => {
+          this._authStatus.set( AuthStatus.notAuthenticated );
+
+          return of(false)
+        })
+      );
+
+  }
+
 }
